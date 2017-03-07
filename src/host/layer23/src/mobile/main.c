@@ -58,6 +58,7 @@ int debug_set = 0;
 char *config_dir = NULL;
 int use_mncc_sock = 0;
 int daemonize = 0;
+static char* osmocomcfg = NULL;
 
 int mncc_recv_socket(struct osmocom_ms *ms, int msg_type, void *arg);
 
@@ -96,6 +97,7 @@ static void print_help()
 	printf("  -d --debug		Change debug flags. default: %s\n",
 		debug_default);
 	printf("  -D --daemonize	Run as daemon\n");
+	printf("  -c --config-path	Define the config file path\n");
 	printf("  -m --mncc-sock	Disable built-in MNCC handler and "
 		"offer socket\n");
 }
@@ -112,10 +114,11 @@ static void handle_options(int argc, char **argv)
 			{"debug", 1, 0, 'd'},
 			{"daemonize", 0, 0, 'D'},
 			{"mncc-sock", 0, 0, 'm'},
+			{"config-path", 1, 0, 'c'},
 			{0, 0, 0, 0},
 		};
 
-		c = getopt_long(argc, argv, "hi:u:v:d:Dm",
+		c = getopt_long(argc, argv, "hi:u:v:d:Dmc:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -144,6 +147,9 @@ static void handle_options(int argc, char **argv)
 			break;
 		case 'm':
 			use_mncc_sock = 1;
+			break;
+		case 'c':
+			osmocomcfg = optarg;
 			break;
 		default:
 			break;
@@ -203,7 +209,6 @@ int main(int argc, char **argv)
 	int rc;
 	char const * home;
 	size_t len;
-	const char osmocomcfg[] = ".osmocom/bb/mobile.cfg";
 	char *config_file = NULL;
 
 	printf("%s\n", openbsc_copyright);
@@ -215,6 +220,9 @@ int main(int argc, char **argv)
 	stderr_target = log_target_create_stderr();
 	log_add_target(stderr_target);
 	log_set_all_filter(stderr_target, 1);
+	log_set_use_color(stderr_target, 0);
+	log_set_print_timestamp(stderr_target, 1);
+	log_set_print_category(stderr_target, 1);
 
 	l23_ctx = talloc_named_const(NULL, 1, "layer2 context");
 	msgb_set_talloc_ctx(l23_ctx);
@@ -234,16 +242,21 @@ int main(int argc, char **argv)
 		gsmtap_source_add_sink(gsmtap_inst);
 	}
 
-	home = getenv("HOME");
-	if (home != NULL) {
-		len = strlen(home) + 1 + sizeof(osmocomcfg);
-		config_file = talloc_size(l23_ctx, len);
-		if (config_file != NULL)
-			snprintf(config_file, len, "%s/%s", home, osmocomcfg);
+	if (!osmocomcfg) {
+		osmocomcfg = "Osmocom/config-files/osmocom-bb-mobile.cfg";
+		home = getenv("HOME");
+		if (home != NULL) {
+			len = strlen(home) + 1 + sizeof(osmocomcfg);
+			config_file = talloc_size(l23_ctx, len);
+			if (config_file != NULL)
+				snprintf(config_file, len, "%s/%s", home, osmocomcfg);
+		}
+		/* save the config file directory name */
+		config_dir = talloc_strdup(l23_ctx, config_file);
+		config_dir = dirname(config_dir);
+	} else {
+		config_file = osmocomcfg;
 	}
-	/* save the config file directory name */
-	config_dir = talloc_strdup(l23_ctx, config_file);
-	config_dir = dirname(config_dir);
 
 	if (use_mncc_sock)
 		rc = l23_app_init(mncc_recv_socket, config_file, vty_ip, vty_port);
